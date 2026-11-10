@@ -1,9 +1,8 @@
 # TASK-E08-02 — Entregar conversor e encoder registry
 
 > Gerado pelo passo 37 a partir de `tasks/backlog.json`. Os campos de estado vêm do
-> backlog e não devem ser editados aqui. Critério de aceite: **PENDENTE** de autoria —
-> a coluna `Then` é o requisito aprovado, copiado literal; `Given` e `When` ainda
-> não existem.
+> backlog e não devem ser editados aqui. A coluna `Then` é o requisito aprovado,
+> copiado literal do backlog; `Given` e `When` foram autorados na execução.
 
 | Campo | Valor |
 |---|---|
@@ -27,7 +26,12 @@ Conversão batch para FLAC/WAV/Opus/Vorbis e MP3 quando permitido, com preview.
 
 ## Boundary
 
-<!-- PENDENTE: o que esta TASK não faz, mesmo parecendo relacionado. -->
+- **Não** implementa codificador nenhum: FLAC, WAV, Opus, Vorbis e MP3 saem da lib `vynamp-encode`, entregue por `TASK-E18-02`, no mesmo módulo, e hoje reduzida a um stub de 6 linhas com `pub const VERSION`. Aqui se entrega o registry que escolhe o encoder, a orquestração do lote e a validação pós-escrita; escrever frame FLAC neste app faria dois donos do formato e divergiria do muxing de priming e padding, que é do encoder.
+- **Não** implementa a fila persistida com checkpoints, leases, progresso e pools limitados: o scheduler de jobs é `TASK-E08-01`, em vynamp-engine, e é dependência desta TASK. O lote aqui é consumido pela API que ele expõe; guardar estado de job em disco neste repo duplicaria o lease e quebraria a retomada depois de queda.
+- **Não** implementa o registry de decodificação das entradas: quem abre o contêiner de origem das 17 famílias é o decoder registry de `TASK-E01-04`, em vynamp-decode. O registry desta TASK é só do lado da escrita, e a confusão é plausível porque o título diz encoder registry enquanto o app lê todos os formatos de entrada.
+- **Não** faz restauração hi-res — upscale de profundidade, denoise ou recuperação de conteúdo perdido: essa ferramenta é o Vynamp Restore, `TASK-E18-01`. A AC-3 é regra de rótulo, não de processamento: a conversão lossy tem perda de projeto e o relatório diz isso; melhorar o sinal para caber em outro rótulo seria outro produto.
+- **Não** decide se MP3 e AAC entram na build nem resolve patente e licença: o inventário de codecs, fontes e políticas de distribuição é `TASK-E11-03`, e a decisão de licença não é tomada aqui, apenas consumida. Nesta TASK, quando permitido significa quando o encoder estiver presente na build, e o registry apenas o expõe ou o declara ausente.
+- **Não** define template de nome de saída, organização de pastas nem dedupe: a whitelist de campos e a sanitização de separadores e nomes reservados são `TASK-E08-04`. Nome de saída aqui é parâmetro recebido do chamador; criar template próprio daria duas regras de colisão de nome para o mesmo diretório.
 
 ## Antes de começar
 
@@ -40,17 +44,17 @@ Conversão batch para FLAC/WAV/Opus/Vorbis e MP3 quando permitido, com preview.
 
 | ID | Given | When | Then |
 |---|---|---|---|
-| `TASK-E08-02-AC-1` | PENDENTE | PENDENTE | Validar output após escrita |
-| `TASK-E08-02-AC-2` | PENDENTE | PENDENTE | cancelamento/disco cheio preservam source |
-| `TASK-E08-02-AC-3` | PENDENTE | PENDENTE | conversão lossy não é anunciada como restauração hi-res. |
+| `TASK-E08-02-AC-1` | um lote de 3 originais de hash SHA-256 registrado antes do job — FLAC 24 bits 96 kHz estéreo com 2 480 000 frames (25,833 s), WAV PCM 16 bits 44,1 kHz mono e Opus 128 kbps — com destino em um diretório vazio do mesmo volume da origem, sobre-código de saída configurado por arquivo e colisão de nome desarmada | o worker converte cada arquivo no temporário do mesmo volume, faz fsync, relê e decodifica o temporário e só então compara contêiner, taxa, canais e duração com o plano do job e renomeia sobre o destino; o harness inspeciona o temporário antes do rename e a linha de relatório de cada arquivo | Validar output após escrita |
+| `TASK-E08-02-AC-2` | um lote de 3 FLAC 24 bits 96 kHz com SHA-256 e mtime das origens registrados antes do job, um diretório de destino com espaço livre medido, um cancelamento por arquivo disponível na fila e um `Write` de teste configurado para devolver `io::ErrorKind::StorageFull` na metade da escrita do arquivo 2 | o cancelamento do arquivo 2 é entregue enquanto o temporário de 15 MiB está parcialmente escrito e, em outra execução, o mesmo ponto falha com StorageFull injetado; depois o harness lista o diretório de destino, conta temporários restantes e recalcula SHA-256 e mtime das 3 origens | cancelamento/disco cheio preservam source |
+| `TASK-E08-02-AC-3` | um FLAC 16 bits 44,1 kHz estéreo convertido para Opus 128 kbps VBR, o mesmo original convertido para MP3 320 kbps CBR e um FLAC 24 bits 96 kHz convertido para Opus 256 kbps, com relatório por arquivo em JSON e a linha de status da interface gerada | o lote termina com os 3 jobs em sucesso e o harness lê o relatório e os textos de interface de cada saída, colhendo o tipo declarado, a taxa alvo e qualquer menção a restauração ou ausência de perda, e compara com a lista de termos proibidos do glossário do produto | conversão lossy não é anunciada como restauração hi-res. |
 
 ## Verificação
 
 | Item | Comando / fixture | Evidência esperada |
 |---|---|---|
 | Teste automatizado | `cargo test` no repo `vynamp-converter` | verde no CI Gate |
-| Oráculo independente | PENDENTE | comparação numérica, não "parece certo" |
-| Hardware | PENDENTE | ausência é limitação registrada, não aprovação |
+| Oráculo independente | um teste de integração novo em `apps/converter/tests/escrita_atomica.rs`, importando o `Write` que injeta `io::ErrorKind::StorageFull`, rodado com `cargo test --test escrita_atomica` sobre 3 fixtures pequenos — FLAC 24 bits 96 kHz estéreo de 2 480 000 frames (25,833 s), WAV PCM 16 bits 44,1 kHz mono e Opus 128 kbps — com destino em diretório vazio do mesmo volume, mais o cancelamento do arquivo 2 de 3 disparado no meio do temporário. O repo `apps/converter` tem hoje 1 arquivo .rs (`src/main.rs`, 3 linhas imprimindo `vynamp_converter 0.1.0`), 0 arquivos em `tests/` e `[dependencies]` vazio no Cargo.toml, então esse teste não existe nem pode compilar | por arquivo: o temporário relido declara e entrega o mesmo contêiner, taxa, canais e duração do plano (2 480 000 frames a 96 kHz, 1 canal em 44,1 kHz), e o SHA-256 e o mtime das 3 origens ficam idênticos aos registrados antes do job; 0 temporários `.part` sobrando no destino depois do cancelamento e depois do StorageFull injetado, com código de saída 4 para cancelado e 3 para falha de escrita; as 4 saídas lossy saem rotuladas como lossy com taxa alvo e sem as expressões de restauração ou sem perda. O que ainda não existe hoje: nenhuma linha de conversão de áudio no repo, nenhum teste no repo, `libs/encode/src/lib.rs` é só `pub const VERSION`, e não há encoder de FLAC, Opus, Vorbis, MP3 nem muxer em nenhum crate do umbrella — a evidência falha na compilação antes de medir |
+| Hardware | nenhum: entrada e saída dos três critérios são arquivos em disco e nenhum dispositivo de áudio é aberto; o disco cheio real pediria um volume de 64 MiB ou um VHD, que a suíte não cria por não ser portátil, por isso o ENOSPC entra por um `Write` que devolve StorageFull. Esta máquina é Windows sem placa pro, sem Android, sem iOS e sem macOS, e nenhum dos critérios os exige | ausência é limitação registrada, não aprovação |
 
 ## DoD — pronto para review
 
