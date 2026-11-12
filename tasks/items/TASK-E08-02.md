@@ -1,4 +1,4 @@
-# TASK-E08-02 — Entregar conversor e encoder registry
+# TASK-E08-02 — Entregar conversor em lote e validação pós-escrita
 
 > Gerado pelo passo 37 a partir de `tasks/backlog.json`. Os campos de estado vêm do
 > backlog e não devem ser editados aqui. A coluna `Then` é o requisito aprovado,
@@ -26,9 +26,9 @@ Conversão batch para FLAC/WAV/Opus/Vorbis e MP3 quando permitido, com preview.
 
 ## Boundary
 
-- **Não** implementa codificador nenhum: FLAC, WAV, Opus, Vorbis e MP3 saem da lib `vynamp-encode`, entregue por `TASK-E18-02`, no mesmo módulo, e hoje reduzida a um stub de 6 linhas com `pub const VERSION`. Aqui se entrega o registry que escolhe o encoder, a orquestração do lote e a validação pós-escrita; escrever frame FLAC neste app faria dois donos do formato e divergiria do muxing de priming e padding, que é do encoder.
+- **Não** implementa codificador nenhum: FLAC, WAV, Opus, Vorbis e MP3 saem da lib `vynamp-encode`, entregue por `TASK-E18-02`, no mesmo módulo, e hoje reduzida a um stub de 6 linhas com `pub const VERSION`. Aqui se entrega a orquestração do lote e a validação pós-escrita, sobre o registry que `TASK-E21-01` publica em `vynamp-encode`; escrever frame FLAC neste app faria dois donos do formato e divergiria do muxing de priming e padding, que é do encoder.
 - **Não** implementa a fila persistida com checkpoints, leases, progresso e pools limitados: o scheduler de jobs é `TASK-E08-01`, em vynamp-engine, e é dependência desta TASK. O lote aqui é consumido pela API que ele expõe; guardar estado de job em disco neste repo duplicaria o lease e quebraria a retomada depois de queda.
-- **Não** implementa o registry de decodificação das entradas: ele já existe em `vynamp-decode-core` (`Registry::probe`) e os adapters dos 17 formatos de áudio do produto vêm de `TASK-E01-04`, `TASK-E01-07`, `TASK-E01-08` e `TASK-E17-05`, em vynamp-decode. O registry desta TASK é só do lado da escrita, e a confusão é plausível porque o título diz encoder registry enquanto o app lê todos os formatos de entrada.
+- **Não** implementa o registry de decodificação das entradas: ele já existe em `vynamp-decode-core` (`Registry::probe`) e os adapters dos 17 formatos de áudio do produto vêm de `TASK-E01-04`, `TASK-E01-07`, `TASK-E01-08` e `TASK-E17-05`, em vynamp-decode. O registry do lado da escrita é `TASK-E21-01`, em `vynamp-encode`, e esta TASK o consome; a confusão é plausível porque o app lê todos os formatos de entrada e escreve alguns deles.
 - **Não** faz restauração hi-res — upscale de profundidade, denoise ou recuperação de conteúdo perdido: essa ferramenta é o Vynamp Restore, `TASK-E18-01`. A AC-3 é regra de rótulo, não de processamento: a conversão lossy tem perda de projeto e o relatório diz isso; melhorar o sinal para caber em outro rótulo seria outro produto.
 - **Não** decide se MP3 e AAC entram na build nem resolve patente e licença: o inventário de codecs, fontes e políticas de distribuição é `TASK-E11-03`, e a decisão de licença não é tomada aqui, apenas consumida. Nesta TASK, quando permitido significa quando o encoder estiver presente na build, e o registry apenas o expõe ou o declara ausente.
 - **Não** define template de nome de saída, organização de pastas nem dedupe: a whitelist de campos e a sanitização de separadores e nomes reservados são `TASK-E08-04`. Nome de saída aqui é parâmetro recebido do chamador; criar template próprio daria duas regras de colisão de nome para o mesmo diretório.
